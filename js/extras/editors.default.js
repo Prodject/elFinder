@@ -38,13 +38,19 @@
 			sketch: 'application/x-sketch'
 		},
 		mime2ext,
-		getExtention = function(mime, fm) {
+		getExtention = function(mime, fm, jpeg) {
 			if (!mime2ext) {
 				mime2ext = fm.arrayFlip(ext2mime);
 			}
 			var ext = mime2ext[mime] || fm.mimeTypes[mime];
-			if (ext === 'jpeg') {
-				ext = 'jpg';
+			if (!jpeg) {
+				if (ext === 'jpeg') {
+					ext = 'jpg';
+				}
+			} else {
+				if (ext === 'jpg') {
+					ext = 'jpeg';
+				}
 			}
 			return ext;
 		},
@@ -356,7 +362,7 @@
 					this.disabled = true;
 				} else {
 					this.opts = Object.assign({
-						version: 'v3.7.0'
+						version: 'v3.7.2'
 					}, opts.extraOptions.tuiImgEditOpts || {}, {
 						iconsPath : fm.baseUrl + 'img/tui-',
 						theme : {}
@@ -577,7 +583,7 @@
 						quality = Math.max(0.1, Math.min(1, quality / 100));
 					}
 					return editor.instance.toDataURL({
-						format: getExtention($base.data('mime'), fm),
+						format: getExtention($base.data('mime'), fm, true),
 						quality: quality
 					});
 				}
@@ -1577,7 +1583,7 @@
 							editor.setOption('mode', spec);
 							CodeMirror.autoLoadMode(editor, mode);
 							// show MIME:mode in title bar
-							base.prev().children('.elfinder-dialog-title').append(' (' + spec + ' : ' + mode + ')');
+							base.prev().children('.elfinder-dialog-title').append(' (' + spec + (mode != 'null'? ' : ' + mode : '') + ')');
 						}
 						
 						// editor base node
@@ -1956,7 +1962,7 @@
 				var self = this,
 					fm   = this.fm,
 					dfrd = $.Deferred(),
-					mode = self.confObj.ckeditor5Mode || 'inline',
+					mode = self.confObj.ckeditor5Mode || 'decoupled-document',
 					lang = (function() {
 						var l = fm.lang.toLowerCase().replace('_', '-');
 						if (l.substr(0, 2) === 'zh' && l !== 'zh-cn') {
@@ -1973,6 +1979,7 @@
 
 						// CKEditor5 configure options
 						opts = Object.assign({
+							toolbar: ["heading", "|", "fontSize", "fontFamily", "|", "bold", "italic", "underline", "strikethrough", "highlight", "|", "alignment", "|", "numberedList", "bulletedList", "blockQuote", "indent", "outdent", "|", "ckfinder", "link", "imageUpload", "insertTable", "mediaEmbed", "|", "undo", "redo"],
 							language: lang
 						}, self.confObj.ckeOpts);
 
@@ -1991,7 +1998,7 @@
 									fileRepo = editor.plugins.get('FileRepository'),
 									prevVars = {}, isImage, insertImages;
 								if (editor.ui.view.toolbar && (mode === 'classic' || mode === 'decoupled-document')) {
-									$(editnode).closest('.elfinder-dialog').children('.ui-widget-header').append(editor.ui.view.toolbar.element);
+									$(editnode).closest('.elfinder-dialog').children('.ui-widget-header').append($(editor.ui.view.toolbar.element).css({marginRight:'-1em',marginLeft:'-1em'}));
 								}
 								if (mode === 'classic') {
 									$(editnode).closest('.elfinder-edit-editor').css('overflow', 'auto');
@@ -2640,7 +2647,7 @@
 				}
 			},
 			mimes : ['*'],
-			html : '<iframe style="width:100%;max-height:100%;border:none;"></iframe>',
+			html : '<div style="width:100%;max-height:100%;"></div>',
 			// setup on elFinder bootup
 			setup : function(opts, fm) {
 				var mOpts = opts.extraOptions.onlineConvert || {maxSize:100,showLink:true};
@@ -2744,8 +2751,6 @@
 										convert: con,
 										options: opts
 									});
-								} else {
-									open(cat, con);
 								}
 							}).on('change', function(e) {
 								var t = $(e.target),
@@ -2875,25 +2880,15 @@
 						}
 						return btns;
 					})(),
-					ifm = $(this).hide(),
-					select = $('<div/>')
+					select = $(this)
 						.append(
 							btns,
-							$('<div class="elfinder-edit-onlineconvert-bottom-btn"/>').append(
-								$('<button/>')
-									.addClass(fm.UA.iOS? 'elfinder-button-ios-multiline' : '')
-									.html(fm.i18n('convertOn', 'Online-Convert.com'))
-									.on('click', function() {
-										open();
-									})
-							),
 							(set.showLink? $(set.link) : null)
-						)
-						.appendTo(ifm.parent().css({overflow: 'auto'})),
+						),
 					spnr = $('<div class="elfinder-edit-spinner elfinder-edit-onlineconvert"/>')
 						.hide()
 						.html('<span class="elfinder-spinner-text">' + fm.i18n('nowLoading') + '</span><span class="elfinder-spinner"/>')
-						.appendTo(ifm.parent()),
+						.appendTo(select.parent()),
 					_url = null,
 					url = function() {
 						var onetime;
@@ -2971,13 +2966,14 @@
 							}
 							fm.toast({
 								msg: fm.i18n('editorConvNoApi'),
-								mode: 'warning',
+								mode: 'error',
 								timeOut: 3000,
 								onHidden: function() {
 									uiToast.children().length === 1 && uiToast.appendTo(fm.getUI());
-									open(cat, con);
 								}
 							});
+							spnr.hide();
+							select.show();
 						}
 					},
 					setStatus = function(status) {
@@ -3021,61 +3017,9 @@
 							});
 						}
 					},
-					open = function(cat, con) {
-						var link;
-						if (cat && con) {
-							if (set.conv[cat] && set.conv[cat][con] && set.conv[cat][con].link) {
-								link = set.conv[cat][con].link.replace('%s', con);
-							} else {
-								link = cat === 'hash'? ('/' + con + '-generator') : ('/convert-to-' + con);
-							}
-							link = set.url.replace('%s', cat).replace('%s', link);
-						} else {
-							link = set.url.replace('%s', mode + '-conversion').replace('%s', '');
-						}
-						spnr.hide();
-						select.hide();
-						ifm.parent().css({overflow: fm.UA.iOS? 'auto' : 'hidden'});
-						$(ta).data('dfrd', url().done(function(url) {
-							var opts;
-							if (url) {
-								opts = {
-									css: {
-										height: '100%'
-									}
-								};
-								// trigger event 'editEditorPrepare'
-								ta.editor.trigger('Prepare', {
-									node: ta,
-									editorObj: void(0),
-									instance: ifm,
-									opts: opts
-								});
-								url = link + encodeURIComponent(fm.convAbsUrl(url));
-								ifm.attr('src', url).show().css(opts.css)
-									.one('load', function() {
-										uiToast.appendTo(ta.closest('.ui-dialog'));
-										fm.toast({
-											msg: fm.i18n('editorConvNeedUpload'),
-											mode: 'info',
-											timeOut: 15000,
-											onHidden: function() {
-												uiToast.children().length === 1 && uiToast.appendTo(fm.getUI());
-											},
-											button: {
-												text: 'btnYes'
-											}
-										});
-									});
-							} else {
-								data.error && fm.error(data.error);
-								ta.elfinderdialog('destroy');
-							}
-						}));
-					},
 					mode = 'document',
 					cl, m;
-				ifm.parent().addClass('overflow-scrolling-touch');
+				select.parent().css({overflow: 'auto'}).addClass('overflow-scrolling-touch');
 				if (m = file.mime.match(/^(audio|image|video)/)) {
 					mode = m[1];
 				}
@@ -3101,14 +3045,12 @@
 							setOptions(t);
 						});
 					}
-					ifm.parent().scrollTop(btns.children('.onlineconvert-fieldset-' + mode).offset().top);
+					select.parent().scrollTop(btns.children('.onlineconvert-fieldset-' + mode).offset().top);
 				}
 			},
 			load : function() {},
 			getContent : function() {},
 			save : function() {},
-			// Before dialog close
-			beforeclose : iframeClose,
 			// On dialog closed
 			close : function(ta) {
 				var fm = this.fm,
